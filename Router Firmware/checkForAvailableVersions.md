@@ -16,40 +16,74 @@
 3. Run it in browser developer console, to scan for available firmware versions.
 */
 
-function precisionRound(number, precision) {
-    const factor = Math.pow(10, precision);
-    return Math.round(number * factor) / factor;
+function incrementVersion(version) {
+    let [major, minor, patch] = version.split('.').map(num => parseInt(num, 10));
+    
+    patch += 1;
+    if (patch > 9) {
+        patch = 0;
+        minor += 1;
+    }
+    
+    if (minor > 99) {
+        minor = 0;
+        major += 1;
+    }
+
+    return `${major}.${minor}.${patch}`;
 }
 
-function checkFirmwareExists(version, url)
-{
-    var http = new XMLHttpRequest();
-    http.open('HEAD', url);
-    http.onreadystatechange = function() {
-        if (this.readyState === this.DONE) {
-            if (this.status !== 404){
-              console.log(`${version} : ${url}`);
+function formatVersionForUrl(version) {
+    let [major, minor, patch] = version.split('.');
+    if (parseInt(patch, 10) === 0) {
+        return `${major}.${minor}`;
+    }
+    return `${major}.${minor}.${patch}`;
+}
+
+function checkFirmwareExists(version, url) {
+    return new Promise((resolve) => {
+        const http = new XMLHttpRequest();
+        http.open('HEAD', url, true);
+        http.onreadystatechange = function() {
+            if (this.readyState === this.DONE) {
+                if (this.status !== 404) {
+                    console.log(`${version} : ${url}`);
+                }
+                resolve();
             }
-        }
-    };
-    http.send();
+        };
+        http.onerror = function() {
+            console.error(`Error checking URL: ${url}`);
+            resolve();
+        };
+        http.send();
+    });
 }
 
 async function loadFirmwares() {
-  const router = {
-    manufacturer: "Sercomm", // Replace this with your Router Manufacturer (Sercomm, Skyworth, Arcadyan, etc...)
-    model: "JCOW414",  // Replace this with your Router Model Name (JCOW414, JCOW411, etc...)
-    firmwarePrefix: "SRCMTF1_JCOW414_R", // Replace this with your Router Firmware Version Prefix (SRCMTF1_JCOW414_R, SKYWTF1_JCOW407_R, ARCNTF1_JCOW411_R, etc...)
-  };
+    const router = {
+        manufacturer: "Sercomm", // Replace this with your Router Manufacturer
+        model: "JCOW414",  // Replace this with your Router Model Name
+        firmwarePrefix: "SRCMTF1_JCOW414_R", // Replace this with your Router Firmware Version Prefix
+    };
 
-  let currentVersion = 2.3;
-  const maxVersion = 3;
+    let currentVersion = "2.30.0";
+    const maxVersion = "3.0.0"; // Set the maximum version here
 
-  while (currentVersion < maxVersion) {
-    const url = `http://fota.slv.fxd.jiophone.net/ONT/${router.manufacturer}/${router.model}/${router.firmwarePrefix}${precisionRound(currentVersion, 2)}.img`;
-    checkFirmwareExists(precisionRound(currentVersion, 2), url);
-    currentVersion += 0.01;
-  }
+    const versionChecks = [];
+
+    while (currentVersion !== maxVersion) {
+        const formattedVersion = formatVersionForUrl(currentVersion);
+        const url = `http://fota.slv.fxd.jiophone.net/ONT/${router.manufacturer}/${router.model}/${router.firmwarePrefix}${formattedVersion}.img`;
+        versionChecks.push(checkFirmwareExists(currentVersion, url));
+
+        currentVersion = incrementVersion(currentVersion);
+        
+        if (parseInt(currentVersion.split('.')[0], 10) > parseInt(maxVersion.split('.')[0], 10)) break;
+    }
+
+    await Promise.all(versionChecks);
 }
 
 loadFirmwares();
